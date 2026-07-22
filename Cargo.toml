@@ -1,0 +1,28 @@
+[package]
+name = "joularcore-cli"
+version = "0.1.0"
+edition = "2024"
+authors = ["Adel Noureddine"]
+license = "GPL-3.0-only"
+repository = "https://github.com/joular/joularcore"
+description = "Joular Core CLI is an terminal-interface using Joular Core library to measure power and energy across all systems, OSes and devices"
+
+[[bin]]
+name = "joularcore"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[features]
+default = ["api"]
+api = ["joularcore/api"]
+
+[dependencies]
+joularcore = { path = "../joularcore" }
+ctrlc = "3.5.2"
+clap = { version = "4.6.3", default-features = false, features = ["derive", "std", "help", "usage", "error-context", "color", "suggestions"] }
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
