@@ -4,6 +4,34 @@
 
 This is a command line program that uses [Joular Core](https://github.com/joular/joularcore) library to monitor energy on all platforms and operating systems.
 
+---
+
+## Screenshots
+
+#### CLI — Linux, Windows, macOS, Raspberry Pi
+
+<img src="img/joularcore-windows-cli.png" width="500">
+
+<img src="img/joularcore-linux-cli.png" width="500">
+
+<img src="img/joularcore-macos-cli.png" width="500">
+
+<img src="img/joularcore-rpi3.png" width="500">
+
+#### Process and application monitoring
+
+<img src="img/joularcore-pid-monitoring.png" width="500">
+    
+<img src="img/joularcore-app-monitoring.png" width="500">
+
+#### Numeric and CSV output modes
+
+<img src="img/joularcore-windows-cli-numeric.png" width="500">
+
+<img src="img/joularcore-windows-cli-csv.png" width="500">
+
+---
+
 ## 📜 License
 
 Joular Core CLI is licensed under the GNU General Public License 3 license only (GPL-3.0-only).
