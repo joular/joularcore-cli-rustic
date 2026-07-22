@@ -22,7 +22,7 @@ default = ["api"]
 api = ["joularcore/api"]
 
 [dependencies]
-joularcore = { path = "../joularcore" }
+joularcore = "0.1.0"
 ctrlc = "3.5.2"
 clap = { version = "4.6.3", default-features = false, features = ["derive", "std", "help", "usage", "error-context", "color", "suggestions"] }
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
