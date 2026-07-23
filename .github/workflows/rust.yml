@@ -1,0 +1,121 @@
+name: Rust
+
+on:
+  push:
+    branches: ["main", "develop"]
+  pull_request:
+    branches: ["main", "develop"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64
+            os: ubuntu-latest
+            artifact-suffix: linux-x86_64
+            exe-suffix: ""
+            packager-formats: "deb"
+          - name: Windows x86_64
+            os: windows-latest
+            artifact-suffix: windows-x86_64
+            exe-suffix: ".exe"
+            packager-formats: "nsis"
+          - name: macOS aarch64
+            os: macos-latest
+            artifact-suffix: macos-aarch64
+            exe-suffix: ""
+            packager-formats: "dmg"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libssl-dev \
+            patchelf \
+            rpm
+
+      - name: Build (release)
+        run: cargo build --release --verbose
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: binaries-${{ matrix.artifact-suffix }}
+          path: |
+            target/release/joularcore${{ matrix.exe-suffix }}
+            target/release/joularcoregui${{ matrix.exe-suffix }}
+
+      - name: Install cargo-packager
+        if: github.event_name == 'push'
+        run: cargo install cargo-packager --locked
+
+      - name: Package installers
+        if: github.event_name == 'push'
+        run: cargo packager --release --verbose --formats ${{ matrix.packager-formats }}
+
+      - name: Upload installers
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v7
+        with:
+          name: installers-${{ matrix.artifact-suffix }}
+          path: dist/
+
+  build-sbc:
+    name: Build SBC (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+          - arm-unknown-linux-gnueabihf
+          - armv7-unknown-linux-gnueabihf
+          - aarch64-unknown-linux-musl
+          - arm-unknown-linux-musleabihf
+          - armv7-unknown-linux-musleabihf
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cross
+        uses: taiki-e/install-action@cross
+
+      - name: Build (SBC)
+        run: cross build --release --verbose --target ${{ matrix.target }} --no-default-features --features sbc
+
+      - name: Upload SBC binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: binaries-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/joularcore
