@@ -18,9 +18,10 @@ panic = "abort"
 strip = true
 
 [features]
-default = ["api"]
+default = ["api", "vm"]
 api = ["joularcore/api"]
 sbc = ["joularcore/sbc"]
+vm = ["joularcore/vm"] 
 
 [dependencies]
 joularcore = "0.1.0"
