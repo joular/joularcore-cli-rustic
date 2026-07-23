@@ -89,6 +89,21 @@ joularcore -p 1234 --calibrate-cpu-idle-baseline
 
 ---
 
+## 🟢 Systemd service on Linux
+
+A ready-to-use systemd unit file is included in the `systemd/` directory. It runs Joular Core CLI as a daemon that continuously overwrites `/tmp/joularcore-service.csv` with the latest power reading. Because overwrite mode truncates before each write, the default service file contains only the latest data row, without a CSV header.
+
+```bash
+sudo cp systemd/joularcore.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable joularcore
+sudo systemctl start joularcore
+```
+
+To use a different output path or add options, edit the `ExecStart` line in the service file before copying it.
+
+---
+
 ## 📜 License
 
 Joular Core CLI is licensed under the GNU General Public License 3 license only (GPL-3.0-only).

@@ -20,6 +20,7 @@ strip = true
 [features]
 default = ["api"]
 api = ["joularcore/api"]
+sbc = ["joularcore/sbc"]
 
 [dependencies]
 joularcore = "0.1.0"

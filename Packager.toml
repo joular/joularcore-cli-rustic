@@ -1,0 +1,15 @@
+name = "joularcore"
+product-name = "Joular Core CLI"
+identifier = "org.noureddine.joular.joularcore.cli"
+version = "0.1.0"
+out-dir = "./dist"
+
+binariesDir = "target/release"
+
+before-packaging-command = "cargo build --release"
+
+binaries = [
+  { path = "joularcore", main = true }
+]
+
+formats = ["all"]

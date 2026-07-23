@@ -1,0 +1,11 @@
+[Unit]
+Description=Joular Core CLI service
+
+[Service]
+Type=simple
+Restart=always
+User=root
+ExecStart=/usr/bin/joularcore -o -f /tmp/joularcore-service.csv
+
+[Install]
+WantedBy=multi-user.target
