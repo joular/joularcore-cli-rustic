@@ -9,33 +9,36 @@
  * Author : Adel Noureddine
  */
 
-use clap::{CommandFactory, Parser};
-use joularcore::output::{OutputBundle, OutputSink, OutputWriter};
-use joularcore::{args::Args, common, logging, monitor::JoularCoreMonitor};
+mod args;
+mod terminal;
 
+use args::{Args, matches_app_name};
+use clap::{CommandFactory, FromArgMatches};
+use joularcore::monitor::JoularCoreMonitor;
+use joularcore::ringbuffer::RingBufferWriter;
+use joularcore::{FileWriter, OutputBundle, OutputSink, Schema, Target};
+use terminal::{
+    TerminalWriter, hide_cursor, print_error, print_success, print_warning, show_cursor,
+};
 
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use std::{thread, time};
+use std::thread;
+use std::time::Duration;
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
 const CPU_IDLE_CALIBRATION_SAMPLES: usize = 5;
 const CPU_IDLE_CALIBRATION_INTERVAL_SECS: u64 = 1;
+const SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Generic runtime/internal failure (I/O, unsupported feature at runtime).
 const EXIT_RUNTIME: i32 = 1;
-/// Usage error — bad flag combination or environment. Matches the code
-/// clap itself emits on parse failure (also sysexits EX_USAGE).
-#[allow(dead_code)] // only referenced under cfg(not(feature = "api"))
-const EXIT_USAGE: i32 = 2;
 /// A requested resource (PID, app, RAPL, etc.) could not be located.
 const EXIT_MISSING: i32 = 3;
 
 fn main() {
-    logging::init();
-
     let mut cmd = Args::command();
 
     let about = format!(
@@ -51,95 +54,73 @@ fn main() {
         author = cmd.get_author().unwrap_or("Unknown")
     );
 
+    // Parsed once, from the decorated command: parsing a second time from the
+    // underived one would discard the banner above.
     cmd = cmd.about(about);
-    let _ = cmd.get_matches();
-    let args = Args::parse();
+    let args = match Args::from_arg_matches(&cmd.get_matches()) {
+        Ok(args) => args,
+        Err(e) => e.exit(),
+    };
 
-    #[cfg(not(feature = "api"))]
-    if args.api_port.is_some() {
-        logging::print_error(
-            "--api-port is unavailable because this binary was compiled without the API feature",
-        );
-        std::process::exit(EXIT_USAGE);
-    }
+    // The library prints nothing on its own; it emits `log` records. Without a
+    // logger installed, "RAPL is not readable" and friends are discarded, and a
+    // sensor that reports nothing does so without explanation.
+    env_logger::Builder::new()
+        .filter_level(args.log_level())
+        .parse_default_env()
+        .init();
 
-    // Setup using common logic
-    let ctx = common::setup_joularcore(&args);
-    let common::JoularContext {
-        cpu_energy,
-        gpu_energy,
-        platform,
-        ringbuffer,
-        api_sender,
-        api_shutdown_tx,
-    } = ctx;
-    let _api_shutdown_tx = api_shutdown_tx;
+    let config = args.config();
 
-    // Initialize process monitoring trackers
-    let process_util = platform.process_cpu_usage();
-    let app_util =
-        platform.app_cpu_usage(std::time::Duration::from_secs(args.app_refresh_interval));
-    let cpu_usage = platform.cpu_usage();
-
-    // Initialize monitor
-    let mut monitor = JoularCoreMonitor::new(
-        platform,
-        cpu_energy,
-        gpu_energy,
-        cpu_usage,
-        process_util,
-        app_util,
-        args.cpu_idle_baseline,
-    );
-
-    if args.gui {
-        logging::print_error(
-            "GUI mode is available as a separate program: 'joularcoregui'",
-        );
-        std::process::exit(EXIT_RUNTIME);
-    }
-
+    let builder = JoularCoreMonitor::builder(&config);
+    #[cfg(feature = "vm")]
+    let builder = apply_vm_sensors(builder, &args);
+    let mut monitor = builder.build();
 
     if args.calibrate_cpu_idle_baseline {
         if !args.numeric_only {
             eprintln!(
-                "\x1b[1;33m→ Calibrating CPU idle baseline over {} seconds. Keep the machine idle.\x1b[0m",
-                CPU_IDLE_CALIBRATION_SAMPLES
+                "\x1b[1;33m→ Calibrating CPU idle baseline over {CPU_IDLE_CALIBRATION_SAMPLES} seconds. Keep the machine idle.\x1b[0m"
             );
         }
 
-        let baseline = monitor.calibrate_cpu_idle_baseline(
+        let baseline = match monitor.calibrate_cpu_idle_baseline(
             CPU_IDLE_CALIBRATION_SAMPLES,
-            time::Duration::from_secs(CPU_IDLE_CALIBRATION_INTERVAL_SECS),
-        );
+            Duration::from_secs(CPU_IDLE_CALIBRATION_INTERVAL_SECS),
+        ) {
+            Ok(baseline) => baseline,
+            Err(e) => {
+                print_error(&format!("Failed to calibrate CPU idle baseline: {e}"));
+                std::process::exit(EXIT_RUNTIME);
+            }
+        };
 
-        if !args.numeric_only {
-            println!(
-                "\x1b[1;32m✓ Calibrated CPU idle baseline: {:.2} W\x1b[0m",
-                baseline
-            );
+        if args.numeric_only {
+            println!("{baseline:.2}");
         } else {
-            println!("{:.2}", baseline);
+            print_success(&format!("Calibrated CPU idle baseline: {baseline:.2} W"));
         }
 
+        // Calibration on its own is a one-shot measurement, not a session.
         if args.pid.is_none()
             && args.app.is_none()
             && args.file.is_none()
             && args.component.is_none()
             && !args.ringbuffer
-            && args.api_port.is_none()
         {
             std::process::exit(0);
         }
     }
 
-    let live_terminal_output_enabled = !args.silent && args.file.is_none();
+    // Only the in-place line hides the cursor. Numeric output scrolls, and is
+    // read by other programs, so it must not carry an escape sequence.
+    let live_terminal_output_enabled = !args.silent && args.file.is_none() && !args.numeric_only;
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
         if live_terminal_output_enabled {
-            logging::show_cursor();
+            show_cursor();
         }
 
         // Change value to stop main loop
@@ -149,72 +130,65 @@ fn main() {
 
     let exit_with = |code: i32| -> ! {
         if live_terminal_output_enabled {
-            logging::show_cursor();
+            show_cursor();
         }
         std::process::exit(code);
     };
 
     if live_terminal_output_enabled {
-        logging::hide_cursor();
+        hide_cursor();
     }
-
-    // Initialize output writer
-    let mut writer =
-        match OutputWriter::new(args.file.as_deref(), args.numeric_only, args.overwrite) {
-            Ok(w) => w,
-            Err(e) => {
-                logging::print_error(&format!("Failed to open output file: {}", e));
-                exit_with(EXIT_RUNTIME);
-            }
-        };
 
     let mut system = System::new();
 
     // Verify monitoring capabilities and inputs
     if let Some(pid) = args.pid {
-        if monitor.process_tracker.is_none() {
-            logging::print_error("Process monitoring not supported on this platform");
+        if monitor.platform().process_cpu_usage().is_none() {
+            print_error("Process monitoring not supported on this platform");
             exit_with(EXIT_RUNTIME);
         }
 
         system.refresh_processes(ProcessesToUpdate::All, true);
         if !system.processes().contains_key(&Pid::from_u32(pid)) {
-            logging::print_error(&format!(
-                "PID {} not found (the process may have exited, or you may need elevated privileges to monitor it)",
-                pid
+            print_error(&format!(
+                "PID {pid} not found (the process may have exited, or you may need elevated privileges to monitor it)"
             ));
             exit_with(EXIT_MISSING);
         }
 
         if !args.numeric_only {
-            println!("\x1b[1;32m✓ Monitoring PID {}\x1b[0m", pid);
+            print_success(&format!("Monitoring PID {pid}"));
         }
     }
 
     if let Some(ref app_name) = args.app {
-        if monitor.app_tracker.is_none() {
-            logging::print_error("Application monitoring not supported on this platform");
+        if monitor
+            .platform()
+            .app_cpu_usage(config.app_refresh_interval, config.app_match)
+            .is_none()
+        {
+            print_error("Application monitoring not supported on this platform");
             exit_with(EXIT_RUNTIME);
         }
 
         system.refresh_processes(ProcessesToUpdate::All, true);
+        // Matched the way the library will match it while measuring, so a
+        // session that starts is one that can actually attribute power.
         let found = system.processes().values().any(|proc| {
             if proc.thread_kind().is_some() {
                 return false;
             }
-            let name = proc.name().to_string_lossy();
-            name == app_name.as_str() || name.contains(app_name.as_str())
+            matches_app_name(&proc.name().to_string_lossy(), app_name, args.app_match)
         });
         if !found {
-            logging::print_error(&format!(
-                "Application \"{}\" not found (no matching process is currently running, or elevated privileges may be required)",
-                app_name
+            print_error(&format!(
+                "Application \"{app_name}\" not found (no matching process is currently running, or elevated privileges may be required)"
             ));
             exit_with(EXIT_MISSING);
         }
 
         if !args.numeric_only {
-            println!("\x1b[1;32m✓ Monitoring application: {}\x1b[0m", app_name);
+            print_success(&format!("Monitoring application: {app_name}"));
         }
     }
 
@@ -223,57 +197,123 @@ fn main() {
         println!("\x1b[1;33mJoular Core {}\x1b[0m", env!("CARGO_PKG_VERSION"));
         println!(
             "\x1b[1;36m💻 Platform:\x1b[0m \x1b[32m{}\x1b[0m",
-            monitor.platform.name()
+            monitor.platform().name()
         );
     }
 
-    // Trackers initialized above
+    let mut outputs = OutputBundle::new();
 
-    // Write CSV header if needed
-    if args.file.is_some() && !args.numeric_only && !args.overwrite {
-        // Header should match the selected monitoring mode, not platform capabilities.
-        let has_process = args.pid.is_some();
-        let has_app = args.app.is_some();
-        if let Err(e) = writer.write_csv_header(args.component.as_ref(), has_process, has_app) {
-            logging::print_error(&format!("Failed to write CSV header: {}", e));
+    if let Some(path) = &args.file {
+        let schema = if args.numeric_only {
+            Schema::watts(config.component)
+        } else {
+            Schema::csv(config.component, &config.target)
+        };
+
+        let mut writer = match FileWriter::open(path, schema, args.overwrite) {
+            Ok(writer) => writer,
+            Err(e) => {
+                print_error(&format!("Failed to open output file: {e}"));
+                exit_with(EXIT_RUNTIME);
+            }
+        };
+
+        // A no-op for the bare-wattage schema, and in overwrite mode where the
+        // first sample would erase it.
+        if let Err(e) = writer.write_header() {
+            print_error(&format!("Failed to write CSV header: {e}"));
             exit_with(EXIT_RUNTIME);
+        }
+
+        outputs.push(writer);
+    } else if !args.silent {
+        outputs.push(TerminalWriter::new(
+            config.component,
+            config.target.clone(),
+            args.numeric_only,
+        ));
+    }
+
+    if args.ringbuffer {
+        match RingBufferWriter::new() {
+            Ok(writer) => outputs.push(writer),
+            Err(e) => print_warning(&format!(
+                "Ring buffer unavailable: {e}. Continuing without ring buffer output"
+            )),
         }
     }
 
-    let mut outputs = OutputBundle::new(args.component, args.numeric_only, ringbuffer, api_sender);
-    if live_terminal_output_enabled || args.file.is_some() {
-        outputs.set_writer(writer);
+    // Building the monitor primed the sensors, but a per-target tracker is
+    // created with no history: its first reading only establishes a baseline.
+    if !matches!(config.target, Target::System) {
+        monitor.poll();
     }
 
-    // Get and discard the first data
-    if !args.calibrate_cpu_idle_baseline {
-        monitor.loop_init();
-    }
-
-    if let Some(pid) = args.pid {
-        // Perform one poll to initialize trackers and discard the first reading (delta calculation)
-        monitor.poll(Some(pid), None, args.component.as_ref());
-    }
-
-    if let Some(ref app_name) = args.app {
-        monitor.poll(None, Some(app_name), args.component.as_ref());
-    }
-
-    thread::sleep(time::Duration::from_secs(1));
+    thread::sleep(SAMPLE_INTERVAL);
 
     while running.load(Ordering::SeqCst) {
-        let app_name_str = args.app.as_deref();
-        let sample = monitor.poll(args.pid, app_name_str, args.component.as_ref());
+        let sample = monitor.poll();
 
         if let Err(e) = outputs.send(&sample) {
-            logging::print_error(&format!("Output Error: {}", e));
+            print_error(&format!("Output Error: {e}"));
             break;
         }
 
-        thread::sleep(time::Duration::from_secs(1));
+        thread::sleep(SAMPLE_INTERVAL);
     }
 
     if live_terminal_output_enabled {
-        logging::show_cursor();
+        show_cursor();
     }
+}
+
+/// Read power from the files a hypervisor writes, when the environment names
+/// them. The library supplies the sensor; wiring it in is the program's choice,
+/// so an unreadable VM file falls back to the platform's own sensor rather than
+/// ending the session.
+#[cfg(feature = "vm")]
+fn apply_vm_sensors(
+    mut builder: joularcore::monitor::MonitorBuilder,
+    args: &Args,
+) -> joularcore::monitor::MonitorBuilder {
+    use joularcore::vm::{VmConfig, VmSensor};
+
+    let vm_config = match VmConfig::from_env() {
+        Ok(Some(config)) => config,
+        Ok(None) => return builder,
+        Err(e) => {
+            print_warning(&format!(
+                "VM monitoring is misconfigured ({e}); using platform monitoring"
+            ));
+            return builder;
+        }
+    };
+
+    match VmSensor::cpu_from_config(&vm_config) {
+        Ok(Some(sensor)) => {
+            builder = builder.cpu_sensor(Box::new(sensor));
+            if !args.numeric_only {
+                print_success("VM CPU monitoring");
+            }
+        }
+        Ok(None) => {}
+        Err(e) => print_warning(&format!(
+            "VM CPU monitoring failed ({e}); falling back to platform CPU monitoring"
+        )),
+    }
+
+    match VmSensor::gpu_from_config(&vm_config) {
+        Ok(Some(sensor)) => {
+            builder = builder.gpu_sensor(Box::new(sensor));
+            if !args.numeric_only {
+                print_success("VM GPU monitoring");
+            }
+        }
+        Ok(None) => {}
+        Err(e) => print_warning(&format!(
+            "VM GPU monitoring failed ({e}); falling back to platform GPU monitoring"
+        )),
+    }
+
+    builder
 }

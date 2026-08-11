@@ -18,13 +18,16 @@ panic = "abort"
 strip = true
 
 [features]
-default = ["api", "vm"]
-api = ["joularcore/api"]
+default = ["vm"]
 sbc = ["joularcore/sbc"]
-vm = ["joularcore/vm"] 
+vm = ["joularcore/vm"]
 
 [dependencies]
-joularcore = "0.1.0"
+joularcore = { version = "0.2.0" }
 ctrlc = "3.5.2"
-clap = { version = "4.6.3", default-features = false, features = ["derive", "std", "help", "usage", "error-context", "color", "suggestions"] }
+clap = { version = "4.6.6", default-features = false, features = ["derive", "std", "help", "usage", "error-context", "color", "suggestions"] }
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+# The library prints nothing and emits `log` records instead, so the CLI is what
+# decides where "RAPL is not readable" ends up.
+log = "0.4.33"
+env_logger = { version = "0.11.11", default-features = false, features = ["auto-color", "humantime"] }
