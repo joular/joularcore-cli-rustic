@@ -34,8 +34,6 @@ This is a command line program that uses [Joular Core](https://github.com/joular
 
 ## CLI Options
 
-Joular Core CLI uses the Joular Core library and supports all of its CLI options.
-
 Run `joularcore --help` for a complete list. The main options are:
 
 | Option | Description |
@@ -46,11 +44,11 @@ Run `joularcore --help` for a complete list. The main options are:
 | `-o`, `--overwrite` | With `-f`, truncate before each write so only the latest data row/value is kept |
 | `-c`, `--component <cpu\|gpu>` | Show only CPU or only GPU power |
 | `-i`, `--numeric` | Output only the numeric value, no formatting or labels |
-| `-s`, `--silent` | Suppress terminal output (file, ring buffer, and API still work) |
-| `-g`, `--gui` | Start the graphical user interface |
+| `-s`, `--silent` | Suppress terminal output (file and ring buffer still work) |
 | `-r`, `--ringbuffer` | Write power data to the shared-memory ring buffer |
-| `--api-port <PORT>` | Start the HTTP and WebSocket API server on this port |
-| `--api-allowed-origin <ORIGIN>` | Allow an extra CORS origin for the API (repeatable). Localhost is always allowed. |
+| `-v`, `--verbose` | Show the library's log records, such as why a sensor could not be read. Repeat for more detail. |
+| `--app-match <exact\|contains>` | How `--app` matches process names (default: `exact`) |
+| `--elevation <never\|sudo>` | How far to go for privileged sensor access (default: `never`) |
 | `--app-refresh-interval <SECONDS>` | How often to rescan for new PIDs belonging to an application (default: 3s; set to 0 to rescan every second) |
 | `--cpu-idle-baseline <WATTS>` | Subtract a fixed idle CPU baseline before attributing power to a PID or application |
 | `--calibrate-cpu-idle-baseline` | Measure idle CPU power automatically (5 samples, 1 second each) and use that as the baseline |
@@ -59,8 +57,10 @@ Run `joularcore --help` for a complete list. The main options are:
 - `--pid` and `--app` are mutually exclusive.
 - `--cpu-idle-baseline` and `--calibrate-cpu-idle-baseline` are mutually exclusive.
 - `-o` only has effect when used with `-f`.
-- In the CLI, `-g` / `--gui` conflicts with `--pid`, `--app`, `--file`, `--overwrite`, `--silent`, and `--numeric`.
 - When `-f` is used, the live terminal display is replaced by file output.
+- `--app-match` defaults to `exact`, which ignores case and a trailing `.exe`. Earlier releases matched substrings on Linux and macOS; pass `--app-match contains` for that behaviour. Exact matching avoids over-matching (`code` would otherwise also match `codesign`), but it excludes helper processes such as `firefox-bin`.
+- Power interfaces are privileged on most systems. A sensor that cannot be read shows as `n/a` rather than `0.00`; run with `-v` to see why. On macOS `powermetrics` needs root, so either run the whole CLI under `sudo`, or cache a `sudo` credential and pass `--elevation sudo`. Joular Core never prompts for a password itself.
+- The GUI is a separate program, `joularcoregui`.
 
 ### Examples
 
@@ -74,18 +74,34 @@ joularcore -p 1234
 # Monitor an application by name, write to CSV
 joularcore -a firefox -f power.csv
 
-# Run silently, write to CSV, expose via API
-joularcore -s -f power.csv --api-port 8080
+# Include helper processes such as firefox-bin
+joularcore -a firefox --app-match contains
+
+# Run silently and write to CSV
+joularcore -s -f power.csv
 
 # Only show CPU power, numeric output
 joularcore -c cpu -i
 
-# Launch the GUI (configure everything from inside the GUI)
-joularcore -g
-
 # Subtract idle CPU baseline when attributing process power
 joularcore -p 1234 --calibrate-cpu-idle-baseline
+
+# On macOS, after caching a sudo credential with `sudo -v`
+joularcore --elevation sudo
 ```
+
+---
+
+## 🔨 Building
+
+The CLI uses the published [`joularcore`](https://crates.io/crates/joularcore) library from crates.io, so Cargo fetches it for you:
+
+```bash
+git clone https://github.com/joular/joularcore-cli.git
+cd joularcore-cli && cargo build --release
+```
+
+The binary lands at `target/release/joularcore`. Cargo features: `vm` (default) reads power from files written by a hypervisor, and `sbc` builds for single-board computers such as the Raspberry Pi (`--no-default-features --features sbc`).
 
 ---
 
