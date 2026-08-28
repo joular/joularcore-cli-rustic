@@ -94,11 +94,11 @@ joularcore --elevation sudo
 
 ## 🔨 Building
 
-The CLI uses the published [`joularcore`](https://crates.io/crates/joularcore) library from crates.io, so Cargo fetches it for you:
+The CLI uses the published [`joularcore-rustic`](https://crates.io/crates/joularcore-rustic) library from crates.io, so Cargo fetches it for you:
 
 ```bash
-git clone https://github.com/joular/joularcore-cli.git
-cd joularcore-cli && cargo build --release
+git clone https://github.com/joular/joularcore-cli-rustic.git
+cd joularcore-cli-rustic && cargo build --release
 ```
 
 The binary lands at `target/release/joularcore`. Cargo features: `vm` (default) reads power from files written by a hypervisor, and `sbc` builds for single-board computers such as the Raspberry Pi (`--no-default-features --features sbc`).

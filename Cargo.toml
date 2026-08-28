@@ -1,11 +1,11 @@
 [package]
-name = "joularcore-cli"
+name = "joularcore-cli-rustic"
 version = "0.1.0"
 edition = "2024"
 authors = ["Adel Noureddine"]
 license = "GPL-3.0-only"
-repository = "https://github.com/joular/joularcore"
-description = "Joular Core CLI is an terminal-interface using Joular Core library to measure power and energy across all systems, OSes and devices"
+repository = "https://github.com/joular/joularcore-cli-rustic"
+description = "Joular Core CLI Rustic is an terminal-interface using Joular Core Rustic library to measure power and energy across all systems, OSes and devices"
 
 [[bin]]
 name = "joularcore"
@@ -19,11 +19,11 @@ strip = true
 
 [features]
 default = ["vm"]
-sbc = ["joularcore/sbc"]
-vm = ["joularcore/vm"]
+sbc = ["joularcore-rustic/sbc"]
+vm = ["joularcore-rustic/vm"]
 
 [dependencies]
-joularcore = { version = "0.2.0" }
+joularcore-rustic = { version = "0.1.0" }
 ctrlc = "3.5.2"
 clap = { version = "4.6.6", default-features = false, features = ["derive", "std", "help", "usage", "error-context", "color", "suggestions"] }
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }

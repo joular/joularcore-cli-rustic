@@ -272,10 +272,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "joularcore"
-version = "0.2.0"
+name = "joularcore-cli-rustic"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "ctrlc",
+ "env_logger",
+ "joularcore-rustic",
+ "log",
+ "sysinfo",
+]
+
+[[package]]
+name = "joularcore-rustic"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43c628b7bf045bf8e78f7018599d2f3b1094bfe8ff3457a6745cb6552461a484"
+checksum = "d97548a24001c17a4a1cf50e3bb01e6578443be9353fb8fa071cd6f265f6f287"
 dependencies = [
  "libc",
  "log",
@@ -286,18 +298,6 @@ dependencies = [
  "sysinfo",
  "thiserror",
  "windows",
-]
-
-[[package]]
-name = "joularcore-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "ctrlc",
- "env_logger",
- "joularcore",
- "log",
- "sysinfo",
 ]
 
 [[package]]
