@@ -67,7 +67,6 @@ jobs:
           name: binaries-${{ matrix.artifact-suffix }}
           path: |
             target/release/joularcore${{ matrix.exe-suffix }}
-            target/release/joularcoregui${{ matrix.exe-suffix }}
 
       - name: Install cargo-packager
         if: github.event_name == 'push'
