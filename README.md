@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue)](https://www.gnu.org/licenses/gpl-3.0) ![Made with Rust](https://img.shields.io/badge/Made%20with-Rust-2b2b2b?logo=rust&logoColor=white)
 
-This is a command line program that uses [Joular Core](https://github.com/joular/joularcore) library to monitor energy on all platforms and operating systems.
+This is a command line program that uses [Joular Core - Rustic](https://github.com/joular/joularcore-rustic) library to monitor energy on all platforms and operating systems.
 
 ---
 
